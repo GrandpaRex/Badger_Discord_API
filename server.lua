@@ -1,4 +1,6 @@
 local FormattedToken = "Bot " .. Config.Bot_Token
+local resourceState = "stopped"
+local attempts = 0
 
 local error_codes_defined = {
 	[200] = 'OK - The request was completed successfully..!',
@@ -11,35 +13,68 @@ local error_codes_defined = {
 	[502] = 'Error - Discord API may be down?...'
 };
 
-Citizen.CreateThread(function()
-	if (GetCurrentResourceName() ~= "Badger_Discord_API") then 
-		--StopResource(GetCurrentResourceName());
-		print("[" .. GetCurrentResourceName() .. "] " .. "IMPORTANT: This resource must be named Badger_Discord_API for it to work properly with other scripts...");
+while resourceState ~= "started" do
+	attempts = attempts + 1
+	Wait(500)
+	resourceState = GetResourceState(GetCurrentResourceName())
+	if attempts > Config.MaxStartAttempts then
+		print('[Badger_Discord_API] The resource took too long to start!')
+		return
 	end
-	print("[Badger_Discord_API] For support, make sure to join Badger's official Discord server: discord.gg/WjB5VFz");
-	print('^7[^2Zap-Hosting^7] ^3Use code ^5TheWolfBadger-4765 ^3at checkout for ^220% ^3off of selected services. Visit ^5https://zap-hosting.com/badger ^3to get started!');
-end)
+end
+
+if GetCurrentResourceName() ~= "Badger_Discord_API" then
+	print("[" .. GetCurrentResourceName() .. "] " .. "IMPORTANT: This resource must be named Badger_Discord_API for it to work properly with other scripts...");
+	StopResource(GetCurrentResourceName())
+	print("[" .. GetCurrentResourceName() .. "] " .. "Resource stopped!");
+end
+
+function DiscordRequest(method, endpoint, jsondata, reason)
+    local data = nil
+    PerformHttpRequest("https://discord.com/api/"..endpoint, function(errorCode, resultData, resultHeaders)
+		data = {data=resultData, code=errorCode, headers=resultHeaders}
+    end, method, #jsondata > 0 and jsondata or "", {["Content-Type"] = "application/json", ["Authorization"] = FormattedToken, ['X-Audit-Log-Reason'] = reason})
+
+    while data == nil do
+        Citizen.Wait(0)
+    end
+	
+    return data
+end
 
 function sendDebugMessage(msg)
 	print("^1[^5Badger_Discord_API^1] ^3" .. msg);
+end
+
+function GuildConnection(guildID)
+	local guild = DiscordRequest("GET", "guilds/"..guildID, {})
+	if guild.code == 200 then
+		local data = json.decode(guild.data)
+		sendDebugMessage("[Badger_Discord_API] Successful connection to Guild : "..data.name.." ("..data.id..")")
+	else
+		sendDebugMessage("[Badger_Discord_API] An error occured, please check your config and ensure everything is correct. Error: "..(guild.data and json.decode(guild.data) or guild.code))
+	end
+end
+
+if Config.Multiguild then
+	print("[Badger_Discord_API] Attempting multi guild connections!");
+	GuildConnection(Config.Guild_ID)
+	for _,guildIDs in pairs(Config.Guilds) do
+		GuildConnection(guildIDs)
+	end
+else
+	print("[Badger_Discord_API] Attempting guild connection!");
+	GuildConnection(Config.Guild_ID)
 end
 
 tracked = {}
 
 RegisterNetEvent('Badger_Discord_API:PlayerLoaded')
 AddEventHandler('Badger_Discord_API:PlayerLoaded', function()
-	if (GetCurrentResourceName() ~= "Badger_Discord_API") then 
-		TriggerClientEvent('chatMessage', -1, '^1[^5SCRIPT ERROR^1] ^3The script ^1' .. GetCurrentResourceName() .. ' ^3will not work properly... You must '
-	.. 'rename the resource to ^1Badger_Discord_API');
-	end
 	local license = GetIdentifier(source, 'license');
 	if (tracked[license] == nil) then 
 		tracked[license] = true;
-		TriggerClientEvent('chatMessage', source, 
-		'^1[^5Badger_Discord_API^1] ^3The Discord API script was created by Badger. You may join his Discord at: ^6discord.gg/WjB5VFz')
 	end
-	TriggerClientEvent('chatMessage', source, 
-		'^7[^2Zap-Hosting^7] ^3Use code ^5TheWolfBadger-4765 ^3at checkout for ^220% ^3off of selected services. Visit ^5https://zap-hosting.com/badger ^3to get started!');
 end)
 
 card = '{"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.4","body":[{"type":"Image","url":"' .. Config.Splash.Header_IMG .. '","horizontalAlignment":"Center"},{"type":"Container","items":[{"type":"TextBlock","text":"Badger_Discord_API","wrap":true,"fontType":"Default","size":"ExtraLarge","weight":"Bolder","color":"Light","horizontalAlignment":"Center"},{"type":"TextBlock","text":"' .. Config.Splash.Heading1 .. '","wrap":true,"size":"Large","weight":"Bolder","color":"Light","horizontalAlignment":"Center"},{"type":"TextBlock","text":"' .. Config.Splash.Heading2 .. '","wrap":true,"color":"Light","size":"Medium","horizontalAlignment":"Center"},{"type":"ColumnSet","height":"stretch","minHeight":"100px","bleed":true,"horizontalAlignment":"Center","columns":[{"type":"Column","width":"stretch","items":[{"type":"ActionSet","actions":[{"type":"Action.OpenUrl","title":"Discord","url":"' .. Config.Splash.Discord_Link .. '","style":"positive"}],"horizontalAlignment":"Right"}],"height":"stretch"},{"type":"Column","width":"stretch","items":[{"type":"ActionSet","actions":[{"type":"Action.OpenUrl","title":"Website","style":"positive","url":"' .. Config.Splash.Website_Link .. '"}],"horizontalAlignment":"Left"}]}]},{"type":"ActionSet","actions":[{"type":"Action.OpenUrl","title":"Click to join Badger\'s Discord","style":"destructive","iconUrl":"https://i.gyazo.com/0904b936e8e30d0104dec44924bd2294.gif","url":"https://discord.com/invite/WjB5VFz"}],"horizontalAlignment":"Center"}],"style":"default","bleed":true,"height":"stretch"},{"type":"Image","url":"https://i.gyazo.com/7e896862b14be754ae8bad90b664a350.png","selectAction":{"type":"Action.OpenUrl","url":"https://zap-hosting.com/badger"},"horizontalAlignment":"Center"}]}'
@@ -80,19 +115,6 @@ function GetGuildId (guildName)
     result = tostring(Config.Guilds[guildName])
   end
   return result
-end
-
-function DiscordRequest(method, endpoint, jsondata, reason)
-    local data = nil
-    PerformHttpRequest("https://discord.com/api/"..endpoint, function(errorCode, resultData, resultHeaders)
-		data = {data=resultData, code=errorCode, headers=resultHeaders}
-    end, method, #jsondata > 0 and jsondata or "", {["Content-Type"] = "application/json", ["Authorization"] = FormattedToken, ['X-Audit-Log-Reason'] = reason})
-
-    while data == nil do
-        Citizen.Wait(0)
-    end
-	
-    return data
 end
 
 function GetRoleIdFromRoleName(name, guild --[[optional]])
@@ -490,6 +512,9 @@ function GetUserRolesInGuild (user, guild)
 			Citizen.SetTimeout(((Config.CacheDiscordRolesTime or 60)*1000), function() recent_role_cache[user][guild] = nil end)
 		end
 		return roles
+	elseif member.code == 404 then
+		-- This code is ignored here because if a user isn't a member of a guild it throws an error that doesn't mean anything
+		Wait(1)
 	else
 		sendDebugMessage("[Badger_Discord_API] ERROR: Code 200 was not reached... Returning false. [Member Data NOT FOUND] DETAILS: " .. error_codes_defined[member.code])
 		return false
@@ -623,24 +648,3 @@ function ChangeDiscordVoice(user, voice, reason)
 		end
 	end
 end
-
-Citizen.CreateThread(function()
-  local mguild = DiscordRequest("GET", "guilds/"..Config.Guild_ID, {})
-  if mguild.code == 200 then
-    local data = json.decode(mguild.data)
-    sendDebugMessage("[Badger_Discord_API] Successful connection to Guild : "..data.name.." ("..data.id..")")
-  else
-    sendDebugMessage("[Badger_Discord_API] An error occured, please check your config and ensure everything is correct. Error: "..(mguild.data and json.decode(mguild.data) or mguild.code)) 
-  end
-  if (Config.Multiguild) then 
-    for _,guildID in pairs(Config.Guilds) do
-      local guild = DiscordRequest("GET", "guilds/"..guildID, {})
-      if guild.code == 200 then
-        local data = json.decode(guild.data)
-        sendDebugMessage("[Badger_Discord_API] Successful connection to Guild : "..data.name.." ("..data.id..")")
-      else
-        sendDebugMessage("[Badger_Discord_API] An error occured, please check your config and ensure everything is correct. Error: "..(guild.data and json.decode(guild.data) or guild.code)) 
-      end
-    end
-  end
-end)
