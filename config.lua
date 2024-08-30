@@ -9,6 +9,7 @@ Config = {
 	DebugScript = false,
 	CacheDiscordRoles = true, -- true to cache player roles, false to make a new Discord Request every time
 	CacheDiscordRolesTime = 60, -- if CacheDiscordRoles is true, how long to cache roles before clearing (in seconds)
+	MaxStartAttempts = 15, -- This is in 500 millisecond per attempt, wouldn't set higher than 60
 }
 
 Config.Splash = {
